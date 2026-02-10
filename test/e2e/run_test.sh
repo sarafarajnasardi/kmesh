@@ -10,6 +10,8 @@ set -e
 DEFAULT_KIND_IMAGE="kindest/node:v1.30.0@sha256:047357ac0cfea04663786a612ba1eaba9702bef25227a794b52890dd8bcd692e"
 
 ISTIO_VERSION=${ISTIO_VERSION:-"1.22.0"}
+KMESH_MODE=${KMESH_MODE:-"dual-engine"}
+KMESH_KERNEL_NATIVE_LARGE_SCALE_REPLICAS=${KMESH_KERNEL_NATIVE_LARGE_SCALE_REPLICAS:-"20"}
 
 LOGFILE="kmesh_daemon.log"
 
@@ -154,7 +156,7 @@ function setup_kmesh() {
 	fi
 
 	helm install kmesh $ROOT_DIR/deploy/charts/kmesh-helm -n kmesh-system --create-namespace --set deploy.kmesh.image.repository=localhost:5000/kmesh \
-		--set deploy.kmesh.containers.kmeshDaemonArgs="--mode=dual-engine --enable-bypass=false --monitoring=true --enable-ipsec=true" \
+		--set deploy.kmesh.containers.kmeshDaemonArgs="--mode=${KMESH_MODE} --enable-bypass=false --monitoring=true --enable-ipsec=true" \
 		$extra_args
 
 	# Wait for all Kmesh pods to be ready.
@@ -379,6 +381,14 @@ while (("$#")); do
 		CLEANUP_REGISTRY=true
 		shift
 		;;
+	--kmesh-mode)
+		KMESH_MODE="$2"
+		shift 2
+		;;
+	--kernel-native-large-scale-replicas)
+		KMESH_KERNEL_NATIVE_LARGE_SCALE_REPLICAS="$2"
+		shift 2
+		;;
 	--skip-cleanup-apps)
 		PARAMS+=("-istio.test.nocleanup")
 		shift
@@ -421,6 +431,7 @@ fi
 
 kubectl config use-context "kind-$NAME"
 echo "Running tests in cluster '$NAME'"
+echo "Kmesh dataplane mode: ${KMESH_MODE}"
 
 # make sure the Kmesh local image is ready.
 if [[ -z ${SKIP_SETUP:-} ]]; then
@@ -433,7 +444,8 @@ if [[ ${DEBUG:-false} == "true" ]]; then
 	capture_pod_logs &
 fi
 
-cmd="go test -v -tags=integ $ROOT_DIR/test/e2e/... -istio.test.kube.loadbalancer=false ${PARAMS[*]}"
+cmd="KMESH_E2E_KMESH_MODE=${KMESH_MODE} KMESH_E2E_KERNEL_NATIVE_LARGE_SCALE_REPLICAS=${KMESH_KERNEL_NATIVE_LARGE_SCALE_REPLICAS} \
+go test -v -tags=integ $ROOT_DIR/test/e2e/... -istio.test.kube.loadbalancer=false ${PARAMS[*]}"
 
 set +e
 bash -c "$cmd"
